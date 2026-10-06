@@ -7,3 +7,6 @@ gemspec
 
 # Start debugger with binding.b [https://github.com/ruby/debug]
 # gem "debug", ">= 1.0.0"
+
+# The suite uses minitest/mock, which Minitest 6 removed.
+gem "minitest", "< 6"
