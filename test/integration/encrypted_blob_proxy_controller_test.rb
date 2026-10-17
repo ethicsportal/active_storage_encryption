@@ -64,6 +64,21 @@ class ActiveStorageEncryptionEncryptedBlobProxyControllerTest < ActionDispatch::
     assert_equal plaintext, response.body
   end
 
+  test "show() takes the filename from the token, not the URL path" do
+    blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("x"), content_type: "application/pdf", filename: "Jane Doe statement.pdf", service_name: @service.name)
+
+    streaming_url = blob.url(disposition: "attachment")
+    assert_not_includes streaming_url, "Jane"
+    get streaming_url
+
+    assert_response :success
+    assert_match(/\Aattachment; filename="Jane Doe statement.pdf"/, response.headers["content-disposition"])
+
+    get blob.url(disposition: "inline")
+
+    assert_match(/\Ainline; filename="Jane Doe statement.pdf"/, response.headers["content-disposition"])
+  end
+
   test "show() serves a blob of 0 size" do
     Random.new(Minitest.seed)
     plaintext = "".b
