@@ -89,11 +89,14 @@ The `EncryptedGCSService` supports most of the features of the stock `GCSService
 * Upload and download
 * Presigned PUT requests (direct upload)
 * Preset metadata (content-disposition, content-type etc.)
+* `#compose`
+
+Add `google-cloud-storage` and `gcs_put` to your Gemfile to use it.
 
 Implementation details:
 
 * Presigned URLs are subject to the [same constraints](#private-url-constraints) as the other providers. GCP will only serve you objects if you supply the headers. If you wish to generate URLs that can be used without headers, streaming goes through our provided controller.
-* In the stock `Service` the `#compose` operation is "hopless": you tell GCP to "splice" multiple objects in-situ without having to download their content into your application. With encryption, `#compose` can't be performed "hoplessly" as the "compose" RPC call for encrypted objects requires the source objects be encrypted with the same encryption key - all of them. The resulting object will also be encrypted with that key. With this gem, every `Blob` gets encrypted with its own random key, so performing a `#compose` requires downloading the objects, decrypting them and reuploading the composed object. This gets done in a streaming manner to conserve disk space and memory (we provide a resumable upload client for GCS even though the official SDK does not), but the operation is no longer "hopless".
+* In the stock `Service` the `#compose` operation is "hopless": you tell GCP to "splice" multiple objects in-situ without having to download their content into your application. With encryption, `#compose` can't be performed "hoplessly" as the "compose" RPC call for encrypted objects requires the source objects be encrypted with the same encryption key - all of them. The resulting object will also be encrypted with that key. With this gem, every `Blob` gets encrypted with its own random key, so performing a `#compose` requires downloading the objects, decrypting them and reuploading the composed object. This gets done in a streaming manner to conserve disk space and memory (using a resumable upload via [gcs_put](https://github.com/julik/gcs_put), since the official SDK can't stream an upload of unknown size), but the operation is no longer "hopless".
 * You will need to enable the following headers in your bucket CORS configuration for `PUT` requests:
   * `x-goog-encryption-algorithm`
   * `x-goog-encryption-key`
@@ -105,7 +108,7 @@ The `EncryptedS3Service` supports most of the features of the stock `S3Service`.
 
 Implementation details:
 
-* SSE-C is a feature that AWS provides. Other services offering S3-compatible object storage (Minio, Ceph...) may not support this feature - check the documentation of your provider.
+* SSE-C is a feature that AWS provides. Other services offering S3-compatible object storage (Minio, Ceph...) may not support this feature - check the documentation of your provider. The test suite runs against AWS S3 and [DigitalOcean Spaces](#digitalocean-spaces).
 * Presigned URLs are subject to the [same constraints](#private-url-constraints) as with GCS. S3 will only serve you objects if you supply the headers. If you wish to generate URLs that can be used without headers, streaming goes through our provided controller.
 * The `#compose` operation is not hopless with S3, so there is no reduction in functionality vis-a-vis the standard `S3Service`.
 * You will need to enable the following headers in your bucket CORS configuration for `PUT` requests:
@@ -113,7 +116,25 @@ Implementation details:
   * `x-amz-server-side-encryption-customer-key`
   * `x-amz-server-side-encryption-customer-key-MD5`
 
-While S3 allows the `x-amz-server-side-encryption-customer-key-MD5` to be added to the signed URL for PUT, the value of that header gets removed from the signature due to the process called "hoisting" - which occurs during the signing of the URL. So your client _may_ override the encryption key you give it forcibly, by replacing the `x-amz-server-side-encryption-customer-key` and `x-amz-server-side-encryption-customer-key-MD5`. This can produce Blobs encrypted with a key you do not have. If you want to exclude the possibility of this, you need to perform an integrity check on your uploads. The integrity check will fail if the encryption key has been overridden in this manner, and you can then destroy the Blob. This problem has been reported to AWS.
+Presigned URLs (for both `PUT` and `GET`) are signed with the SSE-C headers as signed headers instead of query string parameters - the stock `S3Service` lets the AWS SDK "hoist" them into the query string, which would remove the key MD5 from the signature. With the headers signed, the client has to send exactly the `x-amz-server-side-encryption-customer-*` headers returned by `headers_for_direct_upload` and `headers_for_private_download`, and can't upload with an encryption key of its own.
+
+#### DigitalOcean Spaces
+
+Spaces supports SSE-C and works with `EncryptedS3Service` - point the service at the Spaces endpoint:
+
+```yaml
+# storage.yml
+encrypted_spaces:
+  service: EncryptedS3
+  private_url_policy: stream
+  access_key_id: <%= ENV["DO_SPACES_ACCESS_KEY_ID"] %>
+  secret_access_key: <%= ENV["DO_SPACES_SECRET_ACCESS_KEY"] %>
+  region: fra1
+  endpoint: https://fra1.digitaloceanspaces.com
+  bucket: my-bucket
+```
+
+Spaces ignores the SSE-C parameters in the query string of a presigned URL and only accepts them as headers - which is what the signed headers described above give you. Allow all three headers in your CORS configuration.
 
 ### EncryptedDiskSevice - Filesystem
 
