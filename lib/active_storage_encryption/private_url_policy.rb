@@ -5,9 +5,18 @@ module ActiveStorageEncryption::PrivateUrlPolicy
 
   DEFAULT_POLICY = :stream
 
-  def initialize(private_url_policy: DEFAULT_POLICY, **any_other_options_for_service)
+  def initialize(private_url_policy: DEFAULT_POLICY, filename_in_streaming_url: true, **any_other_options_for_service)
     self.private_url_policy = private_url_policy.to_sym
+    self.filename_in_streaming_url = filename_in_streaming_url
     super(**any_other_options_for_service)
+  end
+
+  def filename_in_streaming_url=(new_value)
+    @filename_in_streaming_url = new_value
+  end
+
+  def filename_in_streaming_url?
+    @filename_in_streaming_url
   end
 
   def private_url_policy=(new_value)
@@ -52,8 +61,9 @@ module ActiveStorageEncryption::PrivateUrlPolicy
       raise ArgumentError, "Cannot generate URL for #{filename} because ActiveStorage::Current.url_options is not set"
     end
 
-    # Request paths end up in proxy and server logs, so the path carries a fixed segment.
-    # The filename travels inside the encrypted token and reaches the browser via Content-Disposition.
-    url_helpers.encrypted_blob_streaming_get_url(verified_key_with_expiration, filename: STREAMING_URL_FILENAME_SEGMENT, **url_options)
+    # Request paths end up in proxy and server logs, so the path can carry a fixed segment instead.
+    # The filename then travels inside the encrypted token and reaches the browser via Content-Disposition.
+    url_filename = filename_in_streaming_url? ? filename : STREAMING_URL_FILENAME_SEGMENT
+    url_helpers.encrypted_blob_streaming_get_url(verified_key_with_expiration, filename: url_filename, **url_options)
   end
 end
